@@ -52,7 +52,7 @@ class StudyTimerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Study Stopwatch")
-        self.root.geometry("420x520")
+        self.root.geometry("420x600")
         self.root.resizable(False, False)
 
         # Stopwatch state
@@ -96,6 +96,29 @@ class StudyTimerApp:
         self.tree.column("date", width=180, anchor="center")
         self.tree.column("duration", width=180, anchor="center")
         self.tree.pack(pady=10)
+
+        # ---------- Manual time entry (for time studied away from the laptop) ----------
+        manual_separator = ttk.Separator(self.root, orient="horizontal")
+        manual_separator.pack(fill="x", pady=(10, 10), padx=20)
+
+        manual_title = tk.Label(self.root, text="Add Manual Study Time", font=("Arial", 13, "bold"))
+        manual_title.pack()
+
+        manual_frame = tk.Frame(self.root)
+        manual_frame.pack(pady=10)
+
+        manual_label = tk.Label(manual_frame, text="Minutes studied:")
+        manual_label.grid(row=0, column=0, padx=5)
+
+        self.manual_entry = tk.Entry(manual_frame, width=8)
+        self.manual_entry.grid(row=0, column=1, padx=5)
+
+        self.add_manual_button = tk.Button(manual_frame, text="Add to Today",
+                                            command=self.add_manual_time)
+        self.add_manual_button.grid(row=0, column=2, padx=5)
+
+        self.manual_feedback_label = tk.Label(self.root, text="", fg="green")
+        self.manual_feedback_label.pack()
 
     # ---------- Stopwatch logic ----------
     def start_timer(self):
@@ -145,6 +168,30 @@ class StudyTimerApp:
         self.elapsed_seconds = 0
         self.update_time_label()
 
+    # ---------- Manual time entry logic ----------
+    def add_manual_time(self):
+        """Reads the minutes typed by the user, validates it, and adds it to today's total."""
+        raw_value = self.manual_entry.get()
+
+        # input() in the console always gives a string; Entry widgets do too.
+        # That's why we still need int() here, and it can still fail.
+        try:
+            minutes = int(raw_value)
+        except ValueError:
+            self.manual_feedback_label.config(text="Please enter a whole number.", fg="red")
+            return
+
+        if minutes <= 0:
+            self.manual_feedback_label.config(text="Minutes must be greater than 0.", fg="red")
+            return
+
+        seconds = minutes * 60
+        add_seconds_to_today(seconds)
+        self.refresh_summary_table()
+
+        self.manual_feedback_label.config(text=f"Added {minutes} minute(s) to today.", fg="green")
+        self.manual_entry.delete(0, tk.END)
+
     def update_time_label(self):
         hours, remainder = divmod(self.elapsed_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
@@ -179,3 +226,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = StudyTimerApp(root)
     root.mainloop()
+    
