@@ -97,6 +97,9 @@ class StudyTimerApp:
         self.tree.column("duration", width=180, anchor="center")
         self.tree.pack(pady=10)
 
+        self.total_label = tk.Label(self.root, text="7-Day Total: 0h 0m 0s", font=("Arial", 12, "bold"))
+        self.total_label.pack(pady=(0, 5))
+
         # ---------- Manual time entry (for time studied away from the laptop) ----------
         manual_separator = ttk.Separator(self.root, orient="horizontal")
         manual_separator.pack(fill="x", pady=(10, 10), padx=20)
@@ -205,14 +208,18 @@ class StudyTimerApp:
 
         data = load_data()
         today = datetime.now()
+        total_seconds = 0
 
         for i in range(DAYS_TO_SHOW):
             day = today - timedelta(days=i)
             day_str = day.strftime("%Y-%m-%d")
             seconds = data.get(day_str, 0)
+            total_seconds += seconds
             duration_text = self.format_duration(seconds)
             display_date = day.strftime("%d.%m.%Y") + (" (Today)" if i == 0 else "")
             self.tree.insert("", "end", values=(display_date, duration_text))
+
+        self.total_label.config(text=f"7-Day Total: {self.format_duration(total_seconds)}")
 
     @staticmethod
     def format_duration(seconds):
@@ -226,4 +233,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = StudyTimerApp(root)
     root.mainloop()
-    
