@@ -52,7 +52,7 @@ class StudyTimerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Study Stopwatch")
-        self.root.geometry("420x600")
+        self.root.geometry("420x650")
         self.root.resizable(False, False)
 
         # Stopwatch state
@@ -99,6 +99,9 @@ class StudyTimerApp:
 
         self.total_label = tk.Label(self.root, text="7-Day Total: 0h 0m 0s", font=("Arial", 12, "bold"))
         self.total_label.pack(pady=(0, 5))
+
+        self.average_label = tk.Label(self.root, text="Daily Average: 0h 0m 0s", font=("Arial", 12))
+        self.average_label.pack(pady=(0, 5))
 
         # ---------- Manual time entry (for time studied away from the laptop) ----------
         manual_separator = ttk.Separator(self.root, orient="horizontal")
@@ -220,6 +223,9 @@ class StudyTimerApp:
             self.tree.insert("", "end", values=(display_date, duration_text))
 
         self.total_label.config(text=f"7-Day Total: {self.format_duration(total_seconds)}")
+
+        average_seconds = total_seconds // DAYS_TO_SHOW
+        self.average_label.config(text=f"Daily Average: {self.format_duration(average_seconds)}")
 
     @staticmethod
     def format_duration(seconds):
