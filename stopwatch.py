@@ -52,13 +52,14 @@ class StudyTimerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Study Stopwatch")
-        self.root.geometry("420x650")
+        self.root.geometry("420x720")
         self.root.resizable(False, False)
 
         # Stopwatch state
         self.running = False
         self.elapsed_seconds = 0   # time elapsed in the current session
         self.timer_job = None      # job id returned by after(), needed to cancel it
+        self.daily_goal_seconds = None  # set when the user defines a goal
 
         self.build_widgets()
         self.refresh_summary_table()
@@ -102,6 +103,25 @@ class StudyTimerApp:
 
         self.average_label = tk.Label(self.root, text="Daily Average: 0h 0m 0s", font=("Arial", 12))
         self.average_label.pack(pady=(0, 5))
+
+        # ---------- Daily goal ----------
+        goal_separator = ttk.Separator(self.root, orient="horizontal")
+        goal_separator.pack(fill="x", pady=(10, 10), padx=20)
+
+        goal_frame = tk.Frame(self.root)
+        goal_frame.pack(pady=5)
+
+        goal_label = tk.Label(goal_frame, text="Daily goal (hours):")
+        goal_label.grid(row=0, column=0, padx=5)
+
+        self.goal_entry = tk.Entry(goal_frame, width=6)
+        self.goal_entry.grid(row=0, column=1, padx=5)
+
+        self.set_goal_button = tk.Button(goal_frame, text="Set Goal", command=self.set_daily_goal)
+        self.set_goal_button.grid(row=0, column=2, padx=5)
+
+        self.goal_status_label = tk.Label(self.root, text="No goal set yet.", font=("Arial", 12, "bold"))
+        self.goal_status_label.pack(pady=(5, 5))
 
         # ---------- Manual time entry (for time studied away from the laptop) ----------
         manual_separator = ttk.Separator(self.root, orient="horizontal")
@@ -159,6 +179,7 @@ class StudyTimerApp:
         if self.elapsed_seconds > 0:
             add_seconds_to_today(self.elapsed_seconds)
             self.refresh_summary_table()
+            self.check_goal_status()
 
         self.elapsed_seconds = 0
         self.update_time_label()
@@ -194,9 +215,45 @@ class StudyTimerApp:
         seconds = minutes * 60
         add_seconds_to_today(seconds)
         self.refresh_summary_table()
+        self.check_goal_status()
 
         self.manual_feedback_label.config(text=f"Added {minutes} minute(s) to today.", fg="green")
         self.manual_entry.delete(0, tk.END)
+
+    # ---------- Daily goal logic ----------
+    def set_daily_goal(self):
+        """Reads the goal in hours, validates it, and stores it as seconds."""
+        raw_value = self.goal_entry.get()
+        try:
+            hours = float(raw_value)
+        except ValueError:
+            self.goal_status_label.config(text="Please enter a valid number of hours.", fg="red")
+            return
+
+        if hours <= 0:
+            self.goal_status_label.config(text="Goal must be greater than 0.", fg="red")
+            return
+
+        self.daily_goal_seconds = int(hours * 3600)
+        self.check_goal_status()
+
+    def check_goal_status(self):
+        """Compares today's total against the goal and updates the ✅/❌ label."""
+        if self.daily_goal_seconds is None:
+            self.goal_status_label.config(text="No goal set yet.", fg="black")
+            return
+
+        data = load_data()
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_seconds = data.get(today_str, 0)
+
+        if today_seconds >= self.daily_goal_seconds:
+            self.goal_status_label.config(text="✅ Goal reached today!", fg="green")
+        else:
+            remaining = self.daily_goal_seconds - today_seconds
+            self.goal_status_label.config(
+                text=f"❌ Not yet — {self.format_duration(remaining)} left", fg="red"
+            )
 
     def update_time_label(self):
         hours, remainder = divmod(self.elapsed_seconds, 3600)
