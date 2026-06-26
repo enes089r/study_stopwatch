@@ -38,13 +38,26 @@ def save_data(data):
         json.dump(data, file, indent=2)
 
 
-def add_seconds_to_today(seconds):
-    """Adds to today's total study time (in seconds) and saves it."""
+def add_seconds_to_today(seconds, category="General"):
+    """Adds to today's total study time (in seconds) for a given category and saves it."""
     data = load_data()
     today_str = datetime.now().strftime("%Y-%m-%d")
-    data[today_str] = data.get(today_str, 0) + seconds
+    day_data = data.get(today_str, {})
+    if not isinstance(day_data, dict):
+        # Old format: today was a plain number. Convert it into the new dict format.
+        day_data = {"General": day_data}
+    day_data[category] = day_data.get(category, 0) + seconds
+    data[today_str] = day_data
     save_data(data)
     return data
+
+
+def get_day_total(day_data):
+    """Sums all category seconds for a single day's data (a dict of category -> seconds).
+    Also handles old-format data, where a day was just a plain number instead of a dict."""
+    if isinstance(day_data, dict):
+        return sum(day_data.values())
+    return day_data  # old format: already a plain number of seconds
 
 
 # ---------- Application ----------
@@ -52,7 +65,7 @@ class StudyTimerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Study Stopwatch")
-        self.root.geometry("420x720")
+        self.root.geometry("650x680")
         self.root.resizable(False, False)
 
         # Stopwatch state
@@ -61,18 +74,49 @@ class StudyTimerApp:
         self.timer_job = None      # job id returned by after(), needed to cancel it
         self.daily_goal_seconds = None  # set when the user defines a goal
 
+        # ---------- Scrollable container ----------
+        # Everything is built inside a Canvas + Scrollbar so the window can stay
+        # a fixed size even as more sections get added below.
+        canvas = tk.Canvas(self.root, borderwidth=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+        self.scrollable_frame = tk.Frame(canvas)
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda event: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Let the mouse wheel scroll the canvas while hovering over the window
+        canvas.bind_all("<MouseWheel>", lambda event: canvas.yview_scroll(int(-1 * (event.delta / 120)), "units"))
+
         self.build_widgets()
         self.refresh_summary_table()
 
     # ---------- Build UI ----------
     def build_widgets(self):
-        title_label = tk.Label(self.root, text="Study Stopwatch", font=("Arial", 18, "bold"))
+        title_label = tk.Label(self.scrollable_frame, text="Study Stopwatch", font=("Arial", 18, "bold"))
         title_label.pack(pady=(20, 10))
 
-        self.time_label = tk.Label(self.root, text="00:00:00", font=("Consolas", 48))
+        self.time_label = tk.Label(self.scrollable_frame, text="00:00:00", font=("Consolas", 48))
         self.time_label.pack(pady=10)
 
-        button_frame = tk.Frame(self.root)
+        category_frame = tk.Frame(self.scrollable_frame)
+        category_frame.pack(pady=(0, 5))
+
+        category_label = tk.Label(category_frame, text="Category:")
+        category_label.grid(row=0, column=0, padx=5)
+
+        self.timer_category_entry = tk.Entry(category_frame, width=15)
+        self.timer_category_entry.grid(row=0, column=1, padx=5)
+        self.timer_category_entry.insert(0, "General")
+
+        button_frame = tk.Frame(self.scrollable_frame)
         button_frame.pack(pady=10)
 
         self.start_button = tk.Button(button_frame, text="Start", width=10, command=self.start_timer)
@@ -84,31 +128,35 @@ class StudyTimerApp:
         self.reset_button = tk.Button(button_frame, text="Reset", width=10, command=self.reset_timer)
         self.reset_button.grid(row=0, column=2, padx=5)
 
-        separator = ttk.Separator(self.root, orient="horizontal")
+        separator = ttk.Separator(self.scrollable_frame, orient="horizontal")
         separator.pack(fill="x", pady=20, padx=20)
 
-        summary_title = tk.Label(self.root, text="Last 7 Days Summary", font=("Arial", 14, "bold"))
+        summary_title = tk.Label(self.scrollable_frame, text="Last 7 Days Summary", font=("Arial", 14, "bold"))
         summary_title.pack()
 
         # Table (Treeview) - date and duration columns
-        self.tree = ttk.Treeview(self.root, columns=("date", "duration"), show="headings", height=7)
+        self.tree = ttk.Treeview(self.scrollable_frame, columns=("date", "duration"), show="headings", height=7)
         self.tree.heading("date", text="Date")
         self.tree.heading("duration", text="Duration")
-        self.tree.column("date", width=180, anchor="center")
-        self.tree.column("duration", width=180, anchor="center")
+        self.tree.column("date", width=250, anchor="center")
+        self.tree.column("duration", width=250, anchor="center")
         self.tree.pack(pady=10)
 
-        self.total_label = tk.Label(self.root, text="7-Day Total: 0h 0m 0s", font=("Arial", 12, "bold"))
+        self.total_label = tk.Label(self.scrollable_frame, text="7-Day Total: 0h 0m 0s", font=("Arial", 12, "bold"))
         self.total_label.pack(pady=(0, 5))
 
-        self.average_label = tk.Label(self.root, text="Daily Average: 0h 0m 0s", font=("Arial", 12))
+        self.average_label = tk.Label(self.scrollable_frame, text="Daily Average: 0h 0m 0s", font=("Arial", 12))
         self.average_label.pack(pady=(0, 5))
 
+        self.category_breakdown_label = tk.Label(self.scrollable_frame, text="", font=("Arial", 11),
+                                                   justify="center", wraplength=600)
+        self.category_breakdown_label.pack(pady=(0, 5))
+
         # ---------- Daily goal ----------
-        goal_separator = ttk.Separator(self.root, orient="horizontal")
+        goal_separator = ttk.Separator(self.scrollable_frame, orient="horizontal")
         goal_separator.pack(fill="x", pady=(10, 10), padx=20)
 
-        goal_frame = tk.Frame(self.root)
+        goal_frame = tk.Frame(self.scrollable_frame)
         goal_frame.pack(pady=5)
 
         goal_label = tk.Label(goal_frame, text="Daily goal (hours):")
@@ -120,17 +168,17 @@ class StudyTimerApp:
         self.set_goal_button = tk.Button(goal_frame, text="Set Goal", command=self.set_daily_goal)
         self.set_goal_button.grid(row=0, column=2, padx=5)
 
-        self.goal_status_label = tk.Label(self.root, text="No goal set yet.", font=("Arial", 12, "bold"))
+        self.goal_status_label = tk.Label(self.scrollable_frame, text="No goal set yet.", font=("Arial", 12, "bold"))
         self.goal_status_label.pack(pady=(5, 5))
 
         # ---------- Manual time entry (for time studied away from the laptop) ----------
-        manual_separator = ttk.Separator(self.root, orient="horizontal")
+        manual_separator = ttk.Separator(self.scrollable_frame, orient="horizontal")
         manual_separator.pack(fill="x", pady=(10, 10), padx=20)
 
-        manual_title = tk.Label(self.root, text="Add Manual Study Time", font=("Arial", 13, "bold"))
+        manual_title = tk.Label(self.scrollable_frame, text="Add Manual Study Time", font=("Arial", 13, "bold"))
         manual_title.pack()
 
-        manual_frame = tk.Frame(self.root)
+        manual_frame = tk.Frame(self.scrollable_frame)
         manual_frame.pack(pady=10)
 
         manual_label = tk.Label(manual_frame, text="Minutes studied:")
@@ -139,11 +187,18 @@ class StudyTimerApp:
         self.manual_entry = tk.Entry(manual_frame, width=8)
         self.manual_entry.grid(row=0, column=1, padx=5)
 
+        manual_category_label = tk.Label(manual_frame, text="Category:")
+        manual_category_label.grid(row=0, column=2, padx=5)
+
+        self.manual_category_entry = tk.Entry(manual_frame, width=12)
+        self.manual_category_entry.grid(row=0, column=3, padx=5)
+        self.manual_category_entry.insert(0, "General")
+
         self.add_manual_button = tk.Button(manual_frame, text="Add to Today",
                                             command=self.add_manual_time)
-        self.add_manual_button.grid(row=0, column=2, padx=5)
+        self.add_manual_button.grid(row=0, column=4, padx=5)
 
-        self.manual_feedback_label = tk.Label(self.root, text="", fg="green")
+        self.manual_feedback_label = tk.Label(self.scrollable_frame, text="", fg="green")
         self.manual_feedback_label.pack()
 
     # ---------- Stopwatch logic ----------
@@ -177,7 +232,8 @@ class StudyTimerApp:
 
         # Add the elapsed time to today's total and save it
         if self.elapsed_seconds > 0:
-            add_seconds_to_today(self.elapsed_seconds)
+            category = self.timer_category_entry.get().strip() or "General"
+            add_seconds_to_today(self.elapsed_seconds, category)
             self.refresh_summary_table()
             self.check_goal_status()
 
@@ -213,7 +269,8 @@ class StudyTimerApp:
             return
 
         seconds = minutes * 60
-        add_seconds_to_today(seconds)
+        category = self.manual_category_entry.get().strip() or "General"
+        add_seconds_to_today(seconds, category)
         self.refresh_summary_table()
         self.check_goal_status()
 
@@ -245,7 +302,7 @@ class StudyTimerApp:
 
         data = load_data()
         today_str = datetime.now().strftime("%Y-%m-%d")
-        today_seconds = data.get(today_str, 0)
+        today_seconds = get_day_total(data.get(today_str, {}))
 
         if today_seconds >= self.daily_goal_seconds:
             self.goal_status_label.config(text="✅ Goal reached today!", fg="green")
@@ -273,7 +330,8 @@ class StudyTimerApp:
         for i in range(DAYS_TO_SHOW):
             day = today - timedelta(days=i)
             day_str = day.strftime("%Y-%m-%d")
-            seconds = data.get(day_str, 0)
+            day_data = data.get(day_str, {})
+            seconds = get_day_total(day_data)
             total_seconds += seconds
             duration_text = self.format_duration(seconds)
             display_date = day.strftime("%d.%m.%Y") + (" (Today)" if i == 0 else "")
@@ -283,6 +341,20 @@ class StudyTimerApp:
 
         average_seconds = total_seconds // DAYS_TO_SHOW
         self.average_label.config(text=f"Daily Average: {self.format_duration(average_seconds)}")
+
+        self.update_category_breakdown(data)
+
+    def update_category_breakdown(self, data):
+        """Shows today's time split by category, e.g. 'Python: 0h 30m 0s | English: 0h 15m 0s'."""
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_data = data.get(today_str, {})
+
+        if not isinstance(today_data, dict) or not today_data:
+            self.category_breakdown_label.config(text="No categories logged today yet.")
+            return
+
+        parts = [f"{category}: {self.format_duration(seconds)}" for category, seconds in today_data.items()]
+        self.category_breakdown_label.config(text="Today by category — " + " | ".join(parts))
 
     @staticmethod
     def format_duration(seconds):
