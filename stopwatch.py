@@ -171,6 +171,10 @@ class StudyTimerApp:
         self.goal_status_label = tk.Label(self.scrollable_frame, text="No goal set yet.", font=("Arial", 12, "bold"))
         self.goal_status_label.pack(pady=(5, 5))
 
+        self.goal_progress_bar = ttk.Progressbar(self.scrollable_frame, length=300,
+                                                   mode="determinate", maximum=100)
+        self.goal_progress_bar.pack(pady=(0, 10))
+
         # ---------- Manual time entry (for time studied away from the laptop) ----------
         manual_separator = ttk.Separator(self.scrollable_frame, orient="horizontal")
         manual_separator.pack(fill="x", pady=(10, 10), padx=20)
@@ -295,14 +299,19 @@ class StudyTimerApp:
         self.check_goal_status()
 
     def check_goal_status(self):
-        """Compares today's total against the goal and updates the ✅/❌ label."""
+        """Compares today's total against the goal and updates the ✅/❌ label and progress bar."""
         if self.daily_goal_seconds is None:
             self.goal_status_label.config(text="No goal set yet.", fg="black")
+            self.goal_progress_bar["value"] = 0
             return
 
         data = load_data()
         today_str = datetime.now().strftime("%Y-%m-%d")
         today_seconds = get_day_total(data.get(today_str, {}))
+
+        # Cap at 100 so the bar doesn't try to go past full when the goal is exceeded
+        percent = min(100, (today_seconds / self.daily_goal_seconds) * 100)
+        self.goal_progress_bar["value"] = percent
 
         if today_seconds >= self.daily_goal_seconds:
             self.goal_status_label.config(text="✅ Goal reached today!", fg="green")
