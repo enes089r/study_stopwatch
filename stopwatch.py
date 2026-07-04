@@ -16,12 +16,39 @@ from datetime import datetime, timedelta
 
 # ---------- Constants ----------
 DATA_FILE = "study_log.json"
-DAYS_TO_SHOW = 7  # how many days to show in the summary table
+DAYS_TO_SHOW = 7
+
+# ---------- Themes ----------
+THEMES = {
+    "dark": {
+        "BG": "#1e1e1e",
+        "FG": "#ffffff",
+        "BTN_BG": "#3c3c3c",
+        "BTN_FG": "#ffffff",
+        "ENTRY_BG": "#2d2d2d",
+        "ENTRY_FG": "#ffffff",
+        "TABLE_BG": "#2d2d2d",
+        "TABLE_FG": "#ffffff",
+        "ACCENT": "#4ec9b0",
+        "ICON": "☀️",
+    },
+    "light": {
+        "BG": "#f5f5f5",
+        "FG": "#1e1e1e",
+        "BTN_BG": "#e0e0e0",
+        "BTN_FG": "#1e1e1e",
+        "ENTRY_BG": "#ffffff",
+        "ENTRY_FG": "#1e1e1e",
+        "TABLE_BG": "#ffffff",
+        "TABLE_FG": "#1e1e1e",
+        "ACCENT": "#0f6e56",
+        "ICON": "🌙",
+    },
+}
 
 
-# ---------- Data layer (JSON read/write) ----------
+# ---------- Data layer ----------
 def load_data():
-    """Reads past records from the JSON file. Returns an empty dict if the file doesn't exist."""
     if not os.path.exists(DATA_FILE):
         return {}
     with open(DATA_FILE, "r") as file:
@@ -32,13 +59,11 @@ def load_data():
 
 
 def save_data(data):
-    """Writes the dictionary to the JSON file."""
     with open(DATA_FILE, "w") as file:
         json.dump(data, file, indent=2)
 
 
 def add_seconds_to_today(seconds, category="General"):
-    """Adds to today's total study time (in seconds) for a given category and saves it."""
     data = load_data()
     today_str = datetime.now().strftime("%Y-%m-%d")
     day_data = data.get(today_str, {})
@@ -51,21 +76,17 @@ def add_seconds_to_today(seconds, category="General"):
 
 
 def get_day_total(day_data):
-    """Sums all category seconds for a single day's data (a dict of category -> seconds).
-    Also handles old-format data, where a day was just a plain number instead of a dict."""
     if isinstance(day_data, dict):
         return sum(day_data.values())
     return day_data
 
 
 def calculate_streak(data):
-    """Counts how many consecutive days (ending today) have at least some study time logged."""
     streak = 0
     today = datetime.now()
     for i in range(365):
         day_str = (today - timedelta(days=i)).strftime("%Y-%m-%d")
-        day_data = data.get(day_str, {})
-        if get_day_total(day_data) > 0:
+        if get_day_total(data.get(day_str, {})) > 0:
             streak += 1
         else:
             break
@@ -84,8 +105,10 @@ class StudyTimerApp:
         self.elapsed_seconds = 0
         self.timer_job = None
         self.daily_goal_seconds = None
+        self.current_theme = "dark"
 
-        # ---------- Scrollable container ----------
+        self._apply_ttk_style()
+
         canvas = tk.Canvas(self.root, borderwidth=0, highlightthickness=0)
         scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
         self.scrollable_frame = tk.Frame(canvas)
@@ -100,120 +123,173 @@ class StudyTimerApp:
 
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-
         canvas.bind_all("<MouseWheel>", lambda event: canvas.yview_scroll(int(-1 * (event.delta / 120)), "units"))
 
+        # Store references to all themed widgets so we can recolor them on toggle
+        self._themed_labels = []
+        self._themed_buttons = []
+        self._themed_entries = []
+        self._themed_frames = []
+        self.canvas = canvas
+
         self.build_widgets()
+        self._apply_theme()
         self.refresh_summary_table()
 
-    # ---------- Build UI ----------
-    def build_widgets(self):
-        title_label = tk.Label(self.scrollable_frame, text="Study Stopwatch", font=("Arial", 18, "bold"))
-        title_label.pack(pady=(20, 10))
+    def _apply_ttk_style(self):
+        t = THEMES[self.current_theme]
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Treeview", background=t["TABLE_BG"], foreground=t["TABLE_FG"],
+                        fieldbackground=t["TABLE_BG"], rowheight=25)
+        style.configure("Treeview.Heading", background=t["BTN_BG"], foreground=t["FG"])
+        style.configure("TSeparator", background="#555555")
+        style.configure("Vertical.TScrollbar", background=t["BTN_BG"], troughcolor=t["BG"])
+        style.configure("TProgressbar", troughcolor=t["BTN_BG"], background=t["ACCENT"])
 
-        self.time_label = tk.Label(self.scrollable_frame, text="00:00:00", font=("Consolas", 48))
+    def _apply_theme(self):
+        """Recolors every widget according to the current theme."""
+        t = THEMES[self.current_theme]
+        self.root.configure(bg=t["BG"])
+        self.canvas.configure(bg=t["BG"])
+        self.scrollable_frame.configure(bg=t["BG"])
+
+        for frame in self._themed_frames:
+            frame.configure(bg=t["BG"])
+        for label, role in self._themed_labels:
+            fg = t["ACCENT"] if role == "accent" else t["FG"]
+            label.configure(bg=t["BG"], fg=fg)
+        for btn in self._themed_buttons:
+            btn.configure(bg=t["BTN_BG"], fg=t["BTN_FG"])
+        for entry in self._themed_entries:
+            entry.configure(bg=t["ENTRY_BG"], fg=t["ENTRY_FG"], insertbackground=t["FG"])
+
+        self._apply_ttk_style()
+        self.theme_button.configure(text=t["ICON"], bg=t["BTN_BG"], fg=t["BTN_FG"])
+
+    def toggle_theme(self):
+        self.current_theme = "light" if self.current_theme == "dark" else "dark"
+        self._apply_theme()
+
+    def _label(self, parent, role="normal", **kwargs):
+        """Helper: creates a Label and registers it for theme updates."""
+        lbl = tk.Label(parent, **kwargs)
+        self._themed_labels.append((lbl, role))
+        return lbl
+
+    def _button(self, parent, **kwargs):
+        btn = tk.Button(parent, **kwargs)
+        self._themed_buttons.append(btn)
+        return btn
+
+    def _entry(self, parent, **kwargs):
+        ent = tk.Entry(parent, **kwargs)
+        self._themed_entries.append(ent)
+        return ent
+
+    def _frame(self, parent, **kwargs):
+        frm = tk.Frame(parent, **kwargs)
+        self._themed_frames.append(frm)
+        return frm
+
+    def build_widgets(self):
+        # Theme toggle button (top right)
+        top_bar = self._frame(self.scrollable_frame)
+        top_bar.pack(fill="x", padx=10, pady=(10, 0))
+        self.theme_button = tk.Button(top_bar, text="☀️", font=("Arial", 14),
+                                       command=self.toggle_theme, relief="flat", cursor="hand2")
+        self._themed_buttons.append(self.theme_button)
+        self.theme_button.pack(side="right")
+
+        self._label(self.scrollable_frame, text="Study Stopwatch",
+                    font=("Arial", 18, "bold"), role="accent").pack(pady=(5, 10))
+
+        self.time_label = self._label(self.scrollable_frame, text="00:00:00", font=("Consolas", 48))
         self.time_label.pack(pady=10)
 
-        category_frame = tk.Frame(self.scrollable_frame)
+        category_frame = self._frame(self.scrollable_frame)
         category_frame.pack(pady=(0, 5))
-
-        category_label = tk.Label(category_frame, text="Category:")
-        category_label.grid(row=0, column=0, padx=5)
-
-        self.timer_category_entry = tk.Entry(category_frame, width=15)
+        self._label(category_frame, text="Category:").grid(row=0, column=0, padx=5)
+        self.timer_category_entry = self._entry(category_frame, width=15)
         self.timer_category_entry.grid(row=0, column=1, padx=5)
         self.timer_category_entry.insert(0, "General")
 
-        button_frame = tk.Frame(self.scrollable_frame)
+        button_frame = self._frame(self.scrollable_frame)
         button_frame.pack(pady=10)
-
-        self.start_button = tk.Button(button_frame, text="Start", width=10, command=self.start_timer)
+        self.start_button = self._button(button_frame, text="Start", width=10, command=self.start_timer)
         self.start_button.grid(row=0, column=0, padx=5)
-
-        self.stop_button = tk.Button(button_frame, text="Stop", width=10, command=self.stop_timer, state="disabled")
+        self.stop_button = self._button(button_frame, text="Stop", width=10,
+                                         command=self.stop_timer, state="disabled")
         self.stop_button.grid(row=0, column=1, padx=5)
-
-        self.reset_button = tk.Button(button_frame, text="Reset", width=10, command=self.reset_timer)
+        self.reset_button = self._button(button_frame, text="Reset", width=10, command=self.reset_timer)
         self.reset_button.grid(row=0, column=2, padx=5)
 
-        separator = ttk.Separator(self.scrollable_frame, orient="horizontal")
-        separator.pack(fill="x", pady=20, padx=20)
+        ttk.Separator(self.scrollable_frame, orient="horizontal").pack(fill="x", pady=20, padx=20)
 
-        summary_title = tk.Label(self.scrollable_frame, text="Last 7 Days Summary", font=("Arial", 14, "bold"))
-        summary_title.pack()
+        self._label(self.scrollable_frame, text="Last 7 Days Summary",
+                    font=("Arial", 14, "bold")).pack()
 
-        self.tree = ttk.Treeview(self.scrollable_frame, columns=("date", "duration"), show="headings", height=7)
+        self.tree = ttk.Treeview(self.scrollable_frame, columns=("date", "duration"),
+                                  show="headings", height=7)
         self.tree.heading("date", text="Date")
         self.tree.heading("duration", text="Duration")
         self.tree.column("date", width=250, anchor="center")
         self.tree.column("duration", width=250, anchor="center")
         self.tree.pack(pady=10)
 
-        self.total_label = tk.Label(self.scrollable_frame, text="7-Day Total: 0h 0m 0s", font=("Arial", 12, "bold"))
+        self.total_label = self._label(self.scrollable_frame, text="7-Day Total: 0h 0m 0s",
+                                        font=("Arial", 12, "bold"))
         self.total_label.pack(pady=(0, 5))
 
-        self.average_label = tk.Label(self.scrollable_frame, text="Daily Average: 0h 0m 0s", font=("Arial", 12))
+        self.average_label = self._label(self.scrollable_frame, text="Daily Average: 0h 0m 0s",
+                                          font=("Arial", 12))
         self.average_label.pack(pady=(0, 5))
 
-        self.streak_label = tk.Label(self.scrollable_frame, text="🔥 Streak: 0 days", font=("Arial", 12, "bold"))
+        self.streak_label = self._label(self.scrollable_frame, text="🔥 Streak: 0 days",
+                                         font=("Arial", 12, "bold"), role="accent")
         self.streak_label.pack(pady=(0, 5))
 
-        self.category_breakdown_label = tk.Label(self.scrollable_frame, text="", font=("Arial", 11),
-                                                  justify="center", wraplength=600)
+        self.category_breakdown_label = self._label(self.scrollable_frame, text="",
+                                                     font=("Arial", 11), justify="center",
+                                                     wraplength=600)
         self.category_breakdown_label.pack(pady=(0, 5))
 
-        # ---------- Daily goal ----------
-        goal_separator = ttk.Separator(self.scrollable_frame, orient="horizontal")
-        goal_separator.pack(fill="x", pady=(10, 10), padx=20)
+        ttk.Separator(self.scrollable_frame, orient="horizontal").pack(fill="x", pady=(10, 10), padx=20)
 
-        goal_frame = tk.Frame(self.scrollable_frame)
+        goal_frame = self._frame(self.scrollable_frame)
         goal_frame.pack(pady=5)
-
-        goal_label = tk.Label(goal_frame, text="Daily goal (hours):")
-        goal_label.grid(row=0, column=0, padx=5)
-
-        self.goal_entry = tk.Entry(goal_frame, width=6)
+        self._label(goal_frame, text="Daily goal (hours):").grid(row=0, column=0, padx=5)
+        self.goal_entry = self._entry(goal_frame, width=6)
         self.goal_entry.grid(row=0, column=1, padx=5)
+        self._button(goal_frame, text="Set Goal", command=self.set_daily_goal).grid(row=0, column=2, padx=5)
 
-        self.set_goal_button = tk.Button(goal_frame, text="Set Goal", command=self.set_daily_goal)
-        self.set_goal_button.grid(row=0, column=2, padx=5)
-
-        self.goal_status_label = tk.Label(self.scrollable_frame, text="No goal set yet.", font=("Arial", 12, "bold"))
+        self.goal_status_label = self._label(self.scrollable_frame, text="No goal set yet.",
+                                              font=("Arial", 12, "bold"))
         self.goal_status_label.pack(pady=(5, 5))
 
         self.goal_progress_bar = ttk.Progressbar(self.scrollable_frame, length=300,
                                                   mode="determinate", maximum=100)
         self.goal_progress_bar.pack(pady=(0, 10))
 
-        # ---------- Manual time entry ----------
-        manual_separator = ttk.Separator(self.scrollable_frame, orient="horizontal")
-        manual_separator.pack(fill="x", pady=(10, 10), padx=20)
+        ttk.Separator(self.scrollable_frame, orient="horizontal").pack(fill="x", pady=(10, 10), padx=20)
 
-        manual_title = tk.Label(self.scrollable_frame, text="Add Manual Study Time", font=("Arial", 13, "bold"))
-        manual_title.pack()
+        self._label(self.scrollable_frame, text="Add Manual Study Time",
+                    font=("Arial", 13, "bold")).pack()
 
-        manual_frame = tk.Frame(self.scrollable_frame)
+        manual_frame = self._frame(self.scrollable_frame)
         manual_frame.pack(pady=10)
-
-        manual_label = tk.Label(manual_frame, text="Minutes studied:")
-        manual_label.grid(row=0, column=0, padx=5)
-
-        self.manual_entry = tk.Entry(manual_frame, width=8)
+        self._label(manual_frame, text="Minutes studied:").grid(row=0, column=0, padx=5)
+        self.manual_entry = self._entry(manual_frame, width=8)
         self.manual_entry.grid(row=0, column=1, padx=5)
-
-        manual_category_label = tk.Label(manual_frame, text="Category:")
-        manual_category_label.grid(row=0, column=2, padx=5)
-
-        self.manual_category_entry = tk.Entry(manual_frame, width=12)
+        self._label(manual_frame, text="Category:").grid(row=0, column=2, padx=5)
+        self.manual_category_entry = self._entry(manual_frame, width=12)
         self.manual_category_entry.grid(row=0, column=3, padx=5)
         self.manual_category_entry.insert(0, "General")
+        self._button(manual_frame, text="Add to Today",
+                     command=self.add_manual_time).grid(row=0, column=4, padx=5)
 
-        self.add_manual_button = tk.Button(manual_frame, text="Add to Today",
-                                           command=self.add_manual_time)
-        self.add_manual_button.grid(row=0, column=4, padx=5)
-
-        self.manual_feedback_label = tk.Label(self.scrollable_frame, text="", fg="green")
-        self.manual_feedback_label.pack()
+        self.manual_feedback_label = self._label(self.scrollable_frame, text="")
+        self.manual_feedback_label.pack(pady=(0, 20))
 
     # ---------- Stopwatch logic ----------
     def start_timer(self):
@@ -225,7 +301,6 @@ class StudyTimerApp:
         self.tick()
 
     def tick(self):
-        """Function that repeatedly calls itself every second. Used INSTEAD of a while loop in tkinter."""
         if not self.running:
             return
         self.elapsed_seconds += 1
@@ -238,22 +313,18 @@ class StudyTimerApp:
         self.running = False
         self.start_button.config(state="normal")
         self.stop_button.config(state="disabled")
-
         if self.timer_job is not None:
             self.root.after_cancel(self.timer_job)
             self.timer_job = None
-
         if self.elapsed_seconds > 0:
             category = self.timer_category_entry.get().strip() or "General"
             add_seconds_to_today(self.elapsed_seconds, category)
             self.refresh_summary_table()
             self.check_goal_status()
-
         self.elapsed_seconds = 0
         self.update_time_label()
 
     def reset_timer(self):
-        """Resets without saving (in case you started it by mistake)."""
         self.running = False
         self.start_button.config(state="normal")
         self.stop_button.config(state="disabled")
@@ -263,60 +334,50 @@ class StudyTimerApp:
         self.elapsed_seconds = 0
         self.update_time_label()
 
-    # ---------- Manual time entry logic ----------
+    # ---------- Manual time entry ----------
     def add_manual_time(self):
-        """Reads the minutes typed by the user, validates it, and adds it to today's total."""
         raw_value = self.manual_entry.get()
         try:
             minutes = int(raw_value)
         except ValueError:
             self.manual_feedback_label.config(text="Please enter a whole number.", fg="red")
             return
-
         if minutes <= 0:
             self.manual_feedback_label.config(text="Minutes must be greater than 0.", fg="red")
             return
-
         seconds = minutes * 60
         category = self.manual_category_entry.get().strip() or "General"
         add_seconds_to_today(seconds, category)
         self.refresh_summary_table()
         self.check_goal_status()
-
         self.manual_feedback_label.config(text=f"Added {minutes} minute(s) to today.", fg="green")
         self.manual_entry.delete(0, tk.END)
 
-    # ---------- Daily goal logic ----------
+    # ---------- Daily goal ----------
     def set_daily_goal(self):
-        """Reads the goal in hours, validates it, and stores it as seconds."""
         raw_value = self.goal_entry.get()
         try:
             hours = float(raw_value)
         except ValueError:
             self.goal_status_label.config(text="Please enter a valid number of hours.", fg="red")
             return
-
         if hours <= 0:
             self.goal_status_label.config(text="Goal must be greater than 0.", fg="red")
             return
-
         self.daily_goal_seconds = int(hours * 3600)
         self.check_goal_status()
 
     def check_goal_status(self):
-        """Compares today's total against the goal and updates the label and progress bar."""
         if self.daily_goal_seconds is None:
-            self.goal_status_label.config(text="No goal set yet.", fg="black")
+            self.goal_status_label.config(text="No goal set yet.",
+                                           fg=THEMES[self.current_theme]["FG"])
             self.goal_progress_bar["value"] = 0
             return
-
         data = load_data()
         today_str = datetime.now().strftime("%Y-%m-%d")
         today_seconds = get_day_total(data.get(today_str, {}))
-
         percent = min(100, (today_seconds / self.daily_goal_seconds) * 100)
         self.goal_progress_bar["value"] = percent
-
         if today_seconds >= self.daily_goal_seconds:
             self.goal_status_label.config(text="✅ Goal reached today!", fg="green")
         else:
@@ -332,28 +393,22 @@ class StudyTimerApp:
 
     # ---------- Summary table ----------
     def refresh_summary_table(self):
-        """Reads the data from JSON and renders the last 7 days into the table."""
         for row in self.tree.get_children():
             self.tree.delete(row)
-
         data = load_data()
         today = datetime.now()
         total_seconds = 0
-
         for i in range(DAYS_TO_SHOW):
             day = today - timedelta(days=i)
             day_str = day.strftime("%Y-%m-%d")
             day_data = data.get(day_str, {})
             seconds = get_day_total(day_data)
             total_seconds += seconds
-            duration_text = self.format_duration(seconds)
             display_date = day.strftime("%d.%m.%Y") + (" (Today)" if i == 0 else "")
-            self.tree.insert("", "end", values=(display_date, duration_text))
+            self.tree.insert("", "end", values=(display_date, self.format_duration(seconds)))
 
         self.total_label.config(text=f"7-Day Total: {self.format_duration(total_seconds)}")
-
-        average_seconds = total_seconds // DAYS_TO_SHOW
-        self.average_label.config(text=f"Daily Average: {self.format_duration(average_seconds)}")
+        self.average_label.config(text=f"Daily Average: {self.format_duration(total_seconds // DAYS_TO_SHOW)}")
 
         streak = calculate_streak(data)
         self.streak_label.config(text=f"🔥 Streak: {streak} day{'s' if streak != 1 else ''}")
@@ -361,15 +416,12 @@ class StudyTimerApp:
         self.update_category_breakdown(data)
 
     def update_category_breakdown(self, data):
-        """Shows today's time split by category."""
         today_str = datetime.now().strftime("%Y-%m-%d")
         today_data = data.get(today_str, {})
-
         if not isinstance(today_data, dict) or not today_data:
             self.category_breakdown_label.config(text="No categories logged today yet.")
             return
-
-        parts = [f"{category}: {self.format_duration(seconds)}" for category, seconds in today_data.items()]
+        parts = [f"{cat}: {self.format_duration(secs)}" for cat, secs in today_data.items()]
         self.category_breakdown_label.config(text="Today by category — " + " | ".join(parts))
 
     @staticmethod
