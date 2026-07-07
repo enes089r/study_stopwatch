@@ -1,3 +1,11 @@
+"""
+Study Stopwatch & Daily Tracker
+--------------------------------
+Sidebar navigation: click a tab on the left to switch panels on the right.
+Main screen always shows the stopwatch, streak, today's category breakdown,
+and the theme toggle. Other features live in dedicated sidebar panels.
+"""
+
 import tkinter as tk
 from tkinter import ttk
 import json
@@ -77,6 +85,17 @@ def format_duration(seconds):
     return f"{hours}h {minutes}m {secs}s"
 
 
+def save_goal(hours):
+    data = load_data()
+    data["goal_hours"] = hours
+    save_data(data)
+
+
+def load_goal():
+    data = load_data()
+    return data.get("goal_hours", None)
+
+
 # ---------- Application ----------
 class StudyTimerApp:
     def __init__(self, root):
@@ -93,11 +112,14 @@ class StudyTimerApp:
         self.active_panel = None
         self._themed_widgets = []
 
+        saved_goal = load_goal()
+        if saved_goal is not None:
+            self.daily_goal_seconds = int(saved_goal * 3600)
+
         self._build_layout()
         self._apply_theme()
         self.refresh_stats()
 
-    # ---------- Layout ----------
     def _build_layout(self):
         self.sidebar = tk.Frame(self.root, width=160)
         self.sidebar.pack(side="left", fill="y")
@@ -151,7 +173,6 @@ class StudyTimerApp:
     def _reg(self, widget, bg_key, fg_key="FG"):
         self._themed_widgets.append((widget, bg_key, fg_key))
 
-    # ---------- Main panel ----------
     def _build_main_panel(self):
         self._clear_content()
         self.active_panel = "main"
@@ -206,7 +227,6 @@ class StudyTimerApp:
         self._apply_theme()
         self.refresh_stats()
 
-    # ---------- Sidebar panels ----------
     def _show_summary(self):
         self._clear_content()
         self.active_panel = "summary"
@@ -267,6 +287,10 @@ class StudyTimerApp:
         self.goal_entry.grid(row=0, column=1, padx=5)
         self._reg(self.goal_entry, "ENTRY_BG", "ENTRY_FG")
 
+        saved_goal = load_goal()
+        if saved_goal is not None:
+            self.goal_entry.insert(0, str(saved_goal))
+
         set_btn = tk.Button(goal_frame, text="Set Goal", command=self.set_daily_goal)
         set_btn.grid(row=0, column=2, padx=5)
         self._reg(set_btn, "BTN_BG", "BTN_FG")
@@ -323,7 +347,6 @@ class StudyTimerApp:
 
         self._apply_theme()
 
-    # ---------- Theme ----------
     def _apply_theme(self):
         t = THEMES[self.current_theme]
         self.root.configure(bg=t["BG"])
@@ -350,7 +373,6 @@ class StudyTimerApp:
             btn.configure(bg=t["SIDEBAR_BG"], fg=t["FG"])
         self.theme_btn.configure(text=t["ICON"], bg=t["SIDEBAR_BG"], fg=t["FG"])
 
-        # Sidebar title label
         for w in self.sidebar.winfo_children():
             if isinstance(w, tk.Label):
                 w.configure(bg=t["SIDEBAR_BG"], fg=t["FG"])
@@ -359,7 +381,6 @@ class StudyTimerApp:
         self.current_theme = "light" if self.current_theme == "dark" else "dark"
         self._apply_theme()
 
-    # ---------- Stopwatch ----------
     def start_timer(self):
         if self.running:
             return
@@ -404,7 +425,6 @@ class StudyTimerApp:
         self.elapsed_seconds = 0
         self.time_label.config(text="00:00:00")
 
-    # ---------- Manual ----------
     def add_manual_time(self):
         try:
             minutes = int(self.manual_entry.get())
@@ -421,7 +441,6 @@ class StudyTimerApp:
         self.manual_feedback_label.config(text=f"Added {minutes} minute(s) to today.", fg="green")
         self.manual_entry.delete(0, tk.END)
 
-    # ---------- Goal ----------
     def set_daily_goal(self):
         try:
             hours = float(self.goal_entry.get())
@@ -432,6 +451,7 @@ class StudyTimerApp:
             self.goal_status_label.config(text="Goal must be greater than 0.", fg="red")
             return
         self.daily_goal_seconds = int(hours * 3600)
+        save_goal(hours)
         self.check_goal_status()
 
     def check_goal_status(self):
@@ -453,7 +473,6 @@ class StudyTimerApp:
             self.goal_status_label.config(
                 text=f"❌ Not yet — {format_duration(remaining)} left", fg="red")
 
-    # ---------- Stats ----------
     def refresh_stats(self):
         data = load_data()
         today = datetime.now()
