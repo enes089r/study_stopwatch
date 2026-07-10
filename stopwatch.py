@@ -144,6 +144,7 @@ class StudyTimerApp:
             ("📊", "Stats", self._show_stats),
             ("🎯", "Goal", self._show_goal),
             ("✍️", "Manual", self._show_manual),
+            ("🔗", "Chain", self._show_chain),
         ]
         for icon, label, cmd in tabs:
             btn = tk.Button(self.sidebar, text=f"  {icon}  {label}",
@@ -344,6 +345,79 @@ class StudyTimerApp:
         self.manual_feedback_label = tk.Label(self.content_area, text="", font=("Arial", 11))
         self.manual_feedback_label.pack(pady=15)
         self._reg(self.manual_feedback_label, "BG", "FG")
+
+        self._apply_theme()
+
+    def _show_chain(self):
+        self._clear_content()
+        self.active_panel = "chain"
+
+        lbl = tk.Label(self.content_area, text="Don't Break the Chain!",
+                       font=("Arial", 14, "bold"))
+        lbl.pack(pady=(25, 5))
+        self._reg(lbl, "BG", "FG")
+
+        if self.daily_goal_seconds is None:
+            info_lbl = tk.Label(self.content_area,
+                                text="Set a daily goal first (Goal tab) to use the chain.",
+                                font=("Arial", 11), wraplength=450, justify="center")
+            info_lbl.pack(pady=20)
+            self._reg(info_lbl, "BG", "FG")
+            self._apply_theme()
+            return
+
+        goal_hours = self.daily_goal_seconds / 3600
+        sub_lbl = tk.Label(self.content_area,
+                           text=f"Goal: {goal_hours:g}h per day  —  ✅ = reached  ❌ = missed",
+                           font=("Arial", 10))
+        sub_lbl.pack(pady=(0, 15))
+        self._reg(sub_lbl, "BG", "FG")
+
+        data = load_data()
+        today = datetime.now()
+
+        # Show last 30 days as a 5-column grid
+        days_to_show = 30
+        grid_frame = tk.Frame(self.content_area)
+        grid_frame.pack(pady=5)
+        self._reg(grid_frame, "BG")
+
+        cols = 5
+        for i in range(days_to_show - 1, -1, -1):
+            day = today - timedelta(days=i)
+            day_str = day.strftime("%Y-%m-%d")
+            day_total = get_day_total(data.get(day_str, {}))
+            reached = day_total >= self.daily_goal_seconds
+
+            symbol = "✅" if reached else "❌"
+            date_text = day.strftime("%d.%m")
+
+            cell = tk.Frame(grid_frame, padx=6, pady=6)
+            row_idx = (days_to_show - 1 - i) // cols
+            col_idx = (days_to_show - 1 - i) % cols
+            cell.grid(row=row_idx, column=col_idx, padx=4, pady=4)
+            self._reg(cell, "BG")
+
+            tk.Label(cell, text=symbol, font=("Arial", 16)).pack()
+            date_lbl = tk.Label(cell, text=date_text, font=("Arial", 8))
+            date_lbl.pack()
+            self._reg(date_lbl, "BG", "FG")
+
+        # Current streak count
+        streak = 0
+        for i in range(365):
+            day_str = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+            day_total = get_day_total(data.get(day_str, {}))
+            if day_total >= self.daily_goal_seconds:
+                streak += 1
+            else:
+                break
+
+        streak_lbl = tk.Label(self.content_area,
+                               text=f"🔥 Current chain: {streak} day{'s' if streak != 1 else ''}",
+                               font=("Arial", 13, "bold"))
+        streak_lbl.pack(pady=(20, 5))
+        self._reg(streak_lbl, "BG", "ACCENT")
 
         self._apply_theme()
 
