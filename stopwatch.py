@@ -85,7 +85,19 @@ def format_duration(seconds):
     return f"{hours}h {minutes}m {secs}s"
 
 
-def save_goal(hours):
+def save_session(start_time, end_time, duration_seconds, category):
+    """Saves a single study session with start/end times to the JSON file."""
+    data = load_data()
+    if "sessions" not in data:
+        data["sessions"] = []
+    data["sessions"].append({
+        "date": start_time.strftime("%Y-%m-%d"),
+        "start": start_time.strftime("%H:%M"),
+        "end": end_time.strftime("%H:%M"),
+        "duration_seconds": duration_seconds,
+        "category": category,
+    })
+    save_data(data)
     data = load_data()
     data["goal_hours"] = hours
     save_data(data)
@@ -108,6 +120,7 @@ class StudyTimerApp:
         self.elapsed_seconds = 0
         self.timer_job = None
         self.daily_goal_seconds = None
+        self.session_start_time = None
         self.current_theme = "dark"
         self.active_panel = None
         self._themed_widgets = []
@@ -145,6 +158,7 @@ class StudyTimerApp:
             ("🎯", "Goal", self._show_goal),
             ("✍️", "Manual", self._show_manual),
             ("🔗", "Chain", self._show_chain),
+            ("📋", "Sessions", self._show_sessions),
         ]
         for icon, label, cmd in tabs:
             btn = tk.Button(self.sidebar, text=f"  {icon}  {label}",
@@ -368,47 +382,50 @@ class StudyTimerApp:
 
         goal_hours = self.daily_goal_seconds / 3600
         sub_lbl = tk.Label(self.content_area,
-                           text=f"Goal: {goal_hours:g}h per day  —  ✅ = reached  ❌ = missed",
+                           text=f"Goal: {goal_hours:g}h per day",
                            font=("Arial", 10))
         sub_lbl.pack(pady=(0, 15))
         self._reg(sub_lbl, "BG", "FG")
 
         data = load_data()
         today = datetime.now()
+        t = THEMES[self.current_theme]
 
-        # Show last 30 days as a 5-column grid
         days_to_show = 30
+        cols = 6
         grid_frame = tk.Frame(self.content_area)
         grid_frame.pack(pady=5)
         self._reg(grid_frame, "BG")
 
-        cols = 5
         for i in range(days_to_show - 1, -1, -1):
             day = today - timedelta(days=i)
             day_str = day.strftime("%Y-%m-%d")
             day_total = get_day_total(data.get(day_str, {}))
             reached = day_total >= self.daily_goal_seconds
 
-            symbol = "✅" if reached else "❌"
-            date_text = day.strftime("%d.%m")
+            idx = days_to_show - 1 - i
+            row_idx = idx // cols
+            col_idx = idx % cols
 
-            cell = tk.Frame(grid_frame, padx=6, pady=6)
-            row_idx = (days_to_show - 1 - i) // cols
-            col_idx = (days_to_show - 1 - i) % cols
+            cell = tk.Canvas(grid_frame, width=70, height=70,
+                             bg=t["BG"], highlightthickness=1,
+                             highlightbackground=t["ACCENT"])
             cell.grid(row=row_idx, column=col_idx, padx=4, pady=4)
-            self._reg(cell, "BG")
 
-            tk.Label(cell, text=symbol, font=("Arial", 16)).pack()
-            date_lbl = tk.Label(cell, text=date_text, font=("Arial", 8))
-            date_lbl.pack()
-            self._reg(date_lbl, "BG", "FG")
+            # Date label inside the box
+            cell.create_text(35, 15, text=day.strftime("%d.%m"),
+                             fill=t["FG"], font=("Arial", 8))
 
-        # Current streak count
+            if reached:
+                # Draw an X across the box
+                cell.create_line(10, 28, 60, 65, fill=t["ACCENT"], width=3)
+                cell.create_line(60, 28, 10, 65, fill=t["ACCENT"], width=3)
+
+        # Current streak
         streak = 0
         for i in range(365):
             day_str = (today - timedelta(days=i)).strftime("%Y-%m-%d")
-            day_total = get_day_total(data.get(day_str, {}))
-            if day_total >= self.daily_goal_seconds:
+            if get_day_total(data.get(day_str, {})) >= self.daily_goal_seconds:
                 streak += 1
             else:
                 break
@@ -418,6 +435,57 @@ class StudyTimerApp:
                                font=("Arial", 13, "bold"))
         streak_lbl.pack(pady=(20, 5))
         self._reg(streak_lbl, "BG", "ACCENT")
+
+        self._apply_theme()
+
+    def _show_sessions(self):
+        self._clear_content()
+        self.active_panel = "sessions"
+
+        lbl = tk.Label(self.content_area, text="This Week's Sessions",
+                       font=("Arial", 14, "bold"))
+        lbl.pack(pady=(20, 10))
+        self._reg(lbl, "BG", "FG")
+
+        data = load_data()
+        sessions = data.get("sessions", [])
+
+        # Filter to this week (last 7 days)
+        today = datetime.now()
+        week_ago = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+        this_week = [s for s in sessions if s.get("date", "") >= week_ago]
+
+        tree = ttk.Treeview(self.content_area,
+                            columns=("date", "start", "end", "duration", "category"),
+                            show="headings", height=12)
+        tree.heading("date", text="Date")
+        tree.heading("start", text="Start")
+        tree.heading("end", text="End")
+        tree.heading("duration", text="Duration")
+        tree.heading("category", text="Category")
+
+        tree.column("date", width=90, anchor="center")
+        tree.column("start", width=60, anchor="center")
+        tree.column("end", width=60, anchor="center")
+        tree.column("duration", width=90, anchor="center")
+        tree.column("category", width=110, anchor="center")
+        tree.pack(padx=10, pady=5, fill="x")
+
+        for s in reversed(this_week):
+            tree.insert("", "end", values=(
+                s.get("date", ""),
+                s.get("start", ""),
+                s.get("end", ""),
+                format_duration(s.get("duration_seconds", 0)),
+                s.get("category", "General"),
+            ))
+
+        if not this_week:
+            no_lbl = tk.Label(self.content_area,
+                              text="No sessions recorded this week yet.",
+                              font=("Arial", 11))
+            no_lbl.pack(pady=15)
+            self._reg(no_lbl, "BG", "FG")
 
         self._apply_theme()
 
@@ -459,6 +527,7 @@ class StudyTimerApp:
         if self.running:
             return
         self.running = True
+        self.session_start_time = datetime.now()
         self.start_button.config(state="disabled")
         self.stop_button.config(state="normal")
         self.tick()
@@ -483,6 +552,8 @@ class StudyTimerApp:
             self.timer_job = None
         if self.elapsed_seconds > 0:
             category = self.timer_category_entry.get().strip() or "General"
+            end_time = datetime.now()
+            save_session(self.session_start_time, end_time, self.elapsed_seconds, category)
             add_seconds_to_today(self.elapsed_seconds, category)
             self.refresh_stats()
             self.check_goal_status()
