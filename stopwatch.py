@@ -108,6 +108,17 @@ def load_goal():
     return data.get("goal_hours", None)
 
 
+def save_theme(theme_name):
+    data = load_data()
+    data["theme"] = theme_name
+    save_data(data)
+
+
+def load_theme():
+    data = load_data()
+    return data.get("theme", "dark")
+
+
 # ---------- Application ----------
 class StudyTimerApp:
     def __init__(self, root):
@@ -121,7 +132,7 @@ class StudyTimerApp:
         self.timer_job = None
         self.daily_goal_seconds = None
         self.session_start_time = None
-        self.current_theme = "dark"
+        self.current_theme = load_theme()
         self.active_panel = None
         self._themed_widgets = []
 
@@ -521,6 +532,7 @@ class StudyTimerApp:
 
     def toggle_theme(self):
         self.current_theme = "light" if self.current_theme == "dark" else "dark"
+        save_theme(self.current_theme)
         self._apply_theme()
 
     def start_timer(self):
