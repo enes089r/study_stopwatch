@@ -305,20 +305,38 @@ class StudyTimerApp:
         goal_frame.pack()
         self._reg(goal_frame, "BG")
 
-        gl = tk.Label(goal_frame, text="Goal (hours):")
+        gl = tk.Label(goal_frame, text="Daily goal:")
         gl.grid(row=0, column=0, padx=5)
         self._reg(gl, "BG", "FG")
 
-        self.goal_entry = tk.Entry(goal_frame, width=6)
-        self.goal_entry.grid(row=0, column=1, padx=5)
-        self._reg(self.goal_entry, "ENTRY_BG", "ENTRY_FG")
+        self.goal_hours_entry = tk.Entry(goal_frame, width=4)
+        self.goal_hours_entry.grid(row=0, column=1, padx=(5, 0))
+        self._reg(self.goal_hours_entry, "ENTRY_BG", "ENTRY_FG")
 
+        h_lbl = tk.Label(goal_frame, text="h")
+        h_lbl.grid(row=0, column=2, padx=(2, 5))
+        self._reg(h_lbl, "BG", "FG")
+
+        self.goal_mins_entry = tk.Entry(goal_frame, width=4)
+        self.goal_mins_entry.grid(row=0, column=3, padx=(0, 0))
+        self._reg(self.goal_mins_entry, "ENTRY_BG", "ENTRY_FG")
+
+        m_lbl = tk.Label(goal_frame, text="min")
+        m_lbl.grid(row=0, column=4, padx=(2, 10))
+        self._reg(m_lbl, "BG", "FG")
+
+        # Pre-fill with saved goal if available
         saved_goal = load_goal()
         if saved_goal is not None:
-            self.goal_entry.insert(0, str(saved_goal))
+            total_mins = int(saved_goal * 60)
+            self.goal_hours_entry.insert(0, str(total_mins // 60))
+            self.goal_mins_entry.insert(0, str(total_mins % 60))
+        else:
+            self.goal_hours_entry.insert(0, "0")
+            self.goal_mins_entry.insert(0, "0")
 
         set_btn = tk.Button(goal_frame, text="Set Goal", command=self.set_daily_goal)
-        set_btn.grid(row=0, column=2, padx=5)
+        set_btn.grid(row=0, column=5, padx=5)
         self._reg(set_btn, "BTN_BG", "BTN_FG")
 
         self.goal_status_label = tk.Label(self.content_area, text="No goal set yet.",
@@ -461,14 +479,68 @@ class StudyTimerApp:
         data = load_data()
         sessions = data.get("sessions", [])
 
-        # Filter to this week (last 7 days)
         today = datetime.now()
         week_ago = (today - timedelta(days=6)).strftime("%Y-%m-%d")
         this_week = [s for s in sessions if s.get("date", "") >= week_ago]
 
+        # ---------- Hourly bar chart ----------
+        # Count minutes worked per hour (0-23) across this week's sessions
+        hour_minutes = [0] * 24
+        for s in this_week:
+            try:
+                start_h = int(s.get("start", "00:00").split(":")[0])
+                end_h = int(s.get("end", "00:00").split(":")[0])
+                dur_min = s.get("duration_seconds", 0) // 60
+                # Distribute minutes across hours spanned
+                span = max(1, end_h - start_h + 1)
+                per_hour = dur_min // span
+                for h in range(start_h, min(end_h + 1, 24)):
+                    hour_minutes[h] += per_hour
+            except (ValueError, IndexError):
+                pass
+
+        t = THEMES[self.current_theme]
+        max_min = max(hour_minutes) if max(hour_minutes) > 0 else 1
+
+        chart_frame = tk.Frame(self.content_area)
+        chart_frame.pack(padx=15, pady=(0, 10))
+        self._reg(chart_frame, "BG")
+
+        canvas_w, canvas_h = 540, 120
+        bar_w = canvas_w // 24
+
+        chart = tk.Canvas(chart_frame, width=canvas_w, height=canvas_h,
+                          bg=t["BG"], highlightthickness=0)
+        chart.pack()
+
+        for h in range(24):
+            bar_h = int((hour_minutes[h] / max_min) * 90) if max_min > 0 else 0
+            x0 = h * bar_w + 2
+            x1 = x0 + bar_w - 4
+            y0 = canvas_h - 20 - bar_h
+            y1 = canvas_h - 20
+
+            # Bar
+            color = t["ACCENT"] if bar_h > 0 else t["BTN_BG"]
+            chart.create_rectangle(x0, y0, x1, y1, fill=color, outline="")
+
+            # Hour label (every 3 hours)
+            if h % 3 == 0:
+                chart.create_text(x0 + (bar_w // 2) - 2, canvas_h - 8,
+                                  text=f"{h:02d}", fill=t["FG"],
+                                  font=("Arial", 7))
+
+        chart_lbl = tk.Label(self.content_area, text="Activity by hour (this week)",
+                             font=("Arial", 9), fg=t["FG"])
+        chart_lbl.pack()
+        self._reg(chart_lbl, "BG", "FG")
+
+        # ---------- Sessions table ----------
+        ttk.Separator(self.content_area, orient="horizontal").pack(fill="x", padx=15, pady=10)
+
         tree = ttk.Treeview(self.content_area,
                             columns=("date", "start", "end", "duration", "category"),
-                            show="headings", height=12)
+                            show="headings", height=7)
         tree.heading("date", text="Date")
         tree.heading("start", text="Start")
         tree.heading("end", text="End")
@@ -600,15 +672,20 @@ class StudyTimerApp:
 
     def set_daily_goal(self):
         try:
-            hours = float(self.goal_entry.get())
+            hours = int(self.goal_hours_entry.get() or 0)
+            mins = int(self.goal_mins_entry.get() or 0)
         except ValueError:
-            self.goal_status_label.config(text="Please enter a valid number.", fg="red")
+            self.goal_status_label.config(text="Please enter whole numbers.", fg="red")
             return
-        if hours <= 0:
+        if hours < 0 or mins < 0 or mins > 59:
+            self.goal_status_label.config(text="Hours ≥ 0, minutes 0–59.", fg="red")
+            return
+        total_hours = hours + mins / 60
+        if total_hours <= 0:
             self.goal_status_label.config(text="Goal must be greater than 0.", fg="red")
             return
-        self.daily_goal_seconds = int(hours * 3600)
-        save_goal(hours)
+        self.daily_goal_seconds = int(total_hours * 3600)
+        save_goal(total_hours)
         self.check_goal_status()
 
     def check_goal_status(self):
