@@ -385,6 +385,50 @@ class StudyTimerApp:
         add_btn.grid(row=0, column=4, padx=5)
         self._reg(add_btn, "BTN_BG", "BTN_FG")
 
+        # Optional time range row
+        time_frame = tk.Frame(self.content_area)
+        time_frame.pack(pady=(10, 0))
+        self._reg(time_frame, "BG")
+
+        opt_lbl = tk.Label(time_frame, text="Time range (optional):", font=("Arial", 10))
+        opt_lbl.grid(row=0, column=0, padx=5)
+        self._reg(opt_lbl, "BG", "FG")
+
+        self.manual_start_entry = tk.Entry(time_frame, width=7)
+        self.manual_start_entry.grid(row=0, column=1, padx=3)
+        self._reg(self.manual_start_entry, "ENTRY_BG", "ENTRY_FG")
+
+        sep_lbl = tk.Label(time_frame, text="→")
+        sep_lbl.grid(row=0, column=2, padx=3)
+        self._reg(sep_lbl, "BG", "FG")
+
+        self.manual_end_entry = tk.Entry(time_frame, width=7)
+        self.manual_end_entry.grid(row=0, column=3, padx=3)
+        self._reg(self.manual_end_entry, "ENTRY_BG", "ENTRY_FG")
+
+        # Auto-calculate minutes when time range is filled
+        def auto_calc_minutes(*args):
+            start_raw = self.manual_start_entry.get().strip()
+            end_raw = self.manual_end_entry.get().strip()
+            if not start_raw or not end_raw:
+                return
+            try:
+                start_dt = datetime.strptime(start_raw, "%H:%M")
+                end_dt = datetime.strptime(end_raw, "%H:%M")
+                diff_min = int((end_dt - start_dt).total_seconds() // 60)
+                if diff_min > 0:
+                    self.manual_entry.delete(0, tk.END)
+                    self.manual_entry.insert(0, str(diff_min))
+            except ValueError:
+                pass
+
+        self.manual_end_entry.bind("<FocusOut>", auto_calc_minutes)
+        self.manual_start_entry.bind("<FocusOut>", auto_calc_minutes)
+
+        hint_lbl = tk.Label(time_frame, text="(HH:MM format, optional)", font=("Arial", 9))
+        hint_lbl.grid(row=0, column=4, padx=5)
+        self._reg(hint_lbl, "BG", "FG")
+
         self.manual_feedback_label = tk.Label(self.content_area, text="", font=("Arial", 11))
         self.manual_feedback_label.pack(pady=15)
         self._reg(self.manual_feedback_label, "BG", "FG")
@@ -535,6 +579,25 @@ class StudyTimerApp:
         chart_lbl.pack()
         self._reg(chart_lbl, "BG", "FG")
 
+        # ---------- Peak block ----------
+        if max(hour_minutes) > 0:
+            # Find the most productive 2-hour block
+            best_start = 0
+            best_total = 0
+            for h in range(23):
+                block = hour_minutes[h] + hour_minutes[h + 1]
+                if block > best_total:
+                    best_total = block
+                    best_start = h
+
+            peak_lbl = tk.Label(
+                self.content_area,
+                text=f"⚡ Peak block: {best_start:02d}:00 – {best_start + 2:02d}:00  ({best_total} min this week)",
+                font=("Arial", 11, "bold")
+            )
+            peak_lbl.pack(pady=(6, 0))
+            self._reg(peak_lbl, "BG", "ACCENT")
+
         # ---------- Sessions table ----------
         ttk.Separator(self.content_area, orient="horizontal").pack(fill="x", padx=15, pady=10)
 
@@ -663,8 +726,30 @@ class StudyTimerApp:
         if minutes <= 0:
             self.manual_feedback_label.config(text="Minutes must be greater than 0.", fg="red")
             return
+
         category = self.manual_category_entry.get().strip() or "General"
-        add_seconds_to_today(minutes * 60, category)
+        seconds = minutes * 60
+        add_seconds_to_today(seconds, category)
+
+        # Optional: save as a session if valid time range provided
+        start_raw = self.manual_start_entry.get().strip()
+        end_raw = self.manual_end_entry.get().strip()
+
+        if start_raw and end_raw:
+            try:
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                start_dt = datetime.strptime(f"{today_str} {start_raw}", "%Y-%m-%d %H:%M")
+                end_dt = datetime.strptime(f"{today_str} {end_raw}", "%Y-%m-%d %H:%M")
+                save_session(start_dt, end_dt, seconds, category)
+            except ValueError:
+                self.manual_feedback_label.config(
+                    text=f"Added {minutes} min — time range skipped (use HH:MM format).",
+                    fg="orange")
+                self.manual_entry.delete(0, tk.END)
+                self.refresh_stats()
+                self.check_goal_status()
+                return
+
         self.refresh_stats()
         self.check_goal_status()
         self.manual_feedback_label.config(text=f"Added {minutes} minute(s) to today.", fg="green")
