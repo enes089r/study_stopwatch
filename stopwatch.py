@@ -598,6 +598,31 @@ class StudyTimerApp:
             peak_lbl.pack(pady=(6, 0))
             self._reg(peak_lbl, "BG", "ACCENT")
 
+            # Dead zones: consecutive hours with zero activity during typical waking hours (07-23)
+            dead_zones = []
+            zone_start = None
+            for h in range(7, 24):
+                if hour_minutes[h] == 0:
+                    if zone_start is None:
+                        zone_start = h
+                else:
+                    if zone_start is not None and h - zone_start >= 2:
+                        dead_zones.append((zone_start, h - 1))
+                    zone_start = None
+            if zone_start is not None and 23 - zone_start >= 1:
+                dead_zones.append((zone_start, 23))
+
+            if dead_zones:
+                # Show the longest dead zone only
+                longest = max(dead_zones, key=lambda z: z[1] - z[0])
+                dead_lbl = tk.Label(
+                    self.content_area,
+                    text=f"💤 Longest gap: {longest[0]:02d}:00 – {longest[1] + 1:02d}:00  ({longest[1] - longest[0] + 1}h with no activity)",
+                    font=("Arial", 10)
+                )
+                dead_lbl.pack(pady=(4, 0))
+                self._reg(dead_lbl, "BG", "FG")
+
         # ---------- Sessions table ----------
         ttk.Separator(self.content_area, orient="horizontal").pack(fill="x", padx=15, pady=10)
 
