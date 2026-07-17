@@ -170,6 +170,7 @@ class StudyTimerApp:
             ("✍️", "Manual", self._show_manual),
             ("🔗", "Chain", self._show_chain),
             ("📋", "Sessions", self._show_sessions),
+            ("📈", "Insights", self._show_insights),
         ]
         for icon, label, cmd in tabs:
             btn = tk.Button(self.sidebar, text=f"  {icon}  {label}",
@@ -657,6 +658,115 @@ class StudyTimerApp:
                               font=("Arial", 11))
             no_lbl.pack(pady=15)
             self._reg(no_lbl, "BG", "FG")
+
+        self._apply_theme()
+
+    def _show_insights(self):
+        self._clear_content()
+        self.active_panel = "insights"
+
+        lbl = tk.Label(self.content_area, text="Insights", font=("Arial", 14, "bold"))
+        lbl.pack(pady=(20, 5))
+        self._reg(lbl, "BG", "FG")
+
+        data = load_data()
+        sessions = data.get("sessions", [])
+        t = THEMES[self.current_theme]
+
+        if not sessions:
+            no_lbl = tk.Label(self.content_area,
+                              text="No session data yet. Start the stopwatch to begin tracking.",
+                              font=("Arial", 11), wraplength=450, justify="center")
+            no_lbl.pack(pady=30)
+            self._reg(no_lbl, "BG", "FG")
+            self._apply_theme()
+            return
+
+        # ---------- Build hour_minutes from ALL sessions ----------
+        hour_minutes = [0] * 24
+        for s in sessions:
+            try:
+                start_h = int(s.get("start", "00:00").split(":")[0])
+                end_h = int(s.get("end", "00:00").split(":")[0])
+                dur_min = s.get("duration_seconds", 0) // 60
+                span = max(1, end_h - start_h + 1)
+                per_hour = dur_min // span
+                for h in range(start_h, min(end_h + 1, 24)):
+                    hour_minutes[h] += per_hour
+            except (ValueError, IndexError):
+                pass
+
+        max_min = max(hour_minutes) if max(hour_minutes) > 0 else 1
+
+        # ---------- Heatmap: 24 colored cells ----------
+        sub_lbl = tk.Label(self.content_area, text="Hour-of-day heatmap (all time)",
+                           font=("Arial", 10))
+        sub_lbl.pack(pady=(0, 6))
+        self._reg(sub_lbl, "BG", "FG")
+
+        heatmap_frame = tk.Frame(self.content_area)
+        heatmap_frame.pack()
+        self._reg(heatmap_frame, "BG")
+
+        # Parse accent color for intensity blending
+        accent = t["ACCENT"]  # e.g. "#4ec9b0"
+        bg = t["BG"]
+
+        def blend_color(intensity):
+            """Returns a hex color blended between bg and accent based on intensity (0.0–1.0)."""
+            def parse(c): return int(c, 16)
+            r1, g1, b1 = parse(bg[1:3]), parse(bg[3:5]), parse(bg[5:7])
+            r2, g2, b2 = parse(accent[1:3]), parse(accent[3:5]), parse(accent[5:7])
+            r = int(r1 + (r2 - r1) * intensity)
+            g = int(g1 + (g2 - g1) * intensity)
+            b = int(b1 + (b2 - b1) * intensity)
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        for h in range(24):
+            intensity = hour_minutes[h] / max_min
+            cell_color = blend_color(intensity)
+
+            cell = tk.Canvas(heatmap_frame, width=22, height=40,
+                             bg=cell_color, highlightthickness=1,
+                             highlightbackground=t["BTN_BG"])
+            cell.grid(row=0, column=h)
+
+            # Hour label below cell
+            lbl_h = tk.Label(heatmap_frame, text=f"{h:02d}", font=("Arial", 7))
+            lbl_h.grid(row=1, column=h)
+            self._reg(lbl_h, "BG", "FG")
+
+        # ---------- Tendency: morning vs evening ----------
+        morning = sum(hour_minutes[6:12])
+        afternoon = sum(hour_minutes[12:18])
+        evening = sum(hour_minutes[18:24])
+        total = morning + afternoon + evening or 1
+
+        tend_lbl = tk.Label(self.content_area, text="Study tendency (all time)",
+                            font=("Arial", 10))
+        tend_lbl.pack(pady=(18, 6))
+        self._reg(tend_lbl, "BG", "FG")
+
+        tend_frame = tk.Frame(self.content_area)
+        tend_frame.pack()
+        self._reg(tend_frame, "BG")
+
+        for i, (label, val) in enumerate([("🌅 Morning\n06–12", morning),
+                                           ("☀️ Afternoon\n12–18", afternoon),
+                                           ("🌙 Evening\n18–24", evening)]):
+            pct = int(val / total * 100)
+            block = tk.Frame(tend_frame, padx=15, pady=8)
+            block.grid(row=0, column=i, padx=10)
+            self._reg(block, "BG")
+
+            tk.Label(block, text=label, font=("Arial", 10), justify="center").pack()
+            self._reg(block.winfo_children()[-1], "BG", "FG")
+
+            tk.Label(block, text=f"{pct}%", font=("Arial", 16, "bold")).pack()
+            self._reg(block.winfo_children()[-1], "BG", "ACCENT")
+
+            tk.Label(block, text=f"{val} min", font=("Arial", 9)).pack()
+            self._reg(block.winfo_children()[-1], "BG", "FG")
 
         self._apply_theme()
 
