@@ -768,6 +768,61 @@ class StudyTimerApp:
             tk.Label(block, text=f"{val} min", font=("Arial", 9)).pack()
             self._reg(block.winfo_children()[-1], "BG", "FG")
 
+        # ---------- Weekly trend: avg minutes per weekday ----------
+        week_lbl = tk.Label(self.content_area, text="Average study time by weekday (all time)",
+                            font=("Arial", 10))
+        week_lbl.pack(pady=(18, 6))
+        self._reg(week_lbl, "BG", "FG")
+
+        # Accumulate minutes and count per weekday (0=Mon, 6=Sun)
+        day_total_min = [0] * 7
+        day_count = [0] * 7
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+        for s in sessions:
+            try:
+                date_obj = datetime.strptime(s.get("date", ""), "%Y-%m-%d")
+                wd = date_obj.weekday()
+                day_total_min[wd] += s.get("duration_seconds", 0) // 60
+                day_count[wd] += 1
+            except ValueError:
+                pass
+
+        avg_by_day = [
+            day_total_min[i] // day_count[i] if day_count[i] > 0 else 0
+            for i in range(7)
+        ]
+        max_avg = max(avg_by_day) if max(avg_by_day) > 0 else 1
+
+        week_frame = tk.Frame(self.content_area)
+        week_frame.pack()
+        self._reg(week_frame, "BG")
+
+        bar_max_h = 60
+        for i, (name, avg) in enumerate(zip(day_names, avg_by_day)):
+            col_frame = tk.Frame(week_frame)
+            col_frame.grid(row=0, column=i, padx=6)
+            self._reg(col_frame, "BG")
+
+            bar_h = int((avg / max_avg) * bar_max_h)
+            spacer = tk.Label(col_frame, text="", height=(bar_max_h - bar_h) // 10 or 1)
+            spacer.pack()
+            self._reg(spacer, "BG", "FG")
+
+            if bar_h > 0:
+                bar = tk.Frame(col_frame, width=30, height=bar_h,
+                               bg=t["ACCENT"])
+                bar.pack()
+                bar.pack_propagate(False)
+
+            avg_lbl = tk.Label(col_frame, text=f"{avg}m", font=("Arial", 8))
+            avg_lbl.pack()
+            self._reg(avg_lbl, "BG", "FG")
+
+            day_lbl = tk.Label(col_frame, text=name, font=("Arial", 9, "bold"))
+            day_lbl.pack()
+            self._reg(day_lbl, "BG", "FG")
+
         self._apply_theme()
 
     def _apply_theme(self):
