@@ -823,6 +823,57 @@ class StudyTimerApp:
             day_lbl.pack()
             self._reg(day_lbl, "BG", "FG")
 
+        # ---------- Category breakdown: last 30 days ----------
+        cat_lbl = tk.Label(self.content_area, text="Category breakdown (last 30 days)",
+                           font=("Arial", 10))
+        cat_lbl.pack(pady=(18, 6))
+        self._reg(cat_lbl, "BG", "FG")
+
+        data30 = load_data()
+        today = datetime.now()
+        cutoff = (today - timedelta(days=29)).strftime("%Y-%m-%d")
+        cat_minutes = {}
+
+        for day_str, day_data in data30.items():
+            if day_str < cutoff or not isinstance(day_data, dict):
+                continue
+            for cat, secs in day_data.items():
+                if isinstance(secs, (int, float)):
+                    cat_minutes[cat] = cat_minutes.get(cat, 0) + secs // 60
+
+        if cat_minutes:
+            total_cat = sum(cat_minutes.values()) or 1
+            sorted_cats = sorted(cat_minutes.items(), key=lambda x: x[1], reverse=True)
+
+            cat_frame = tk.Frame(self.content_area)
+            cat_frame.pack(padx=20, fill="x")
+            self._reg(cat_frame, "BG")
+
+            for cat, mins in sorted_cats:
+                pct = int(mins / total_cat * 100)
+
+                row = tk.Frame(cat_frame)
+                row.pack(fill="x", pady=3)
+                self._reg(row, "BG")
+
+                name_lbl = tk.Label(row, text=f"{cat}", font=("Arial", 10), width=14, anchor="w")
+                name_lbl.pack(side="left")
+                self._reg(name_lbl, "BG", "FG")
+
+                bar_frame = tk.Frame(row, height=14, width=int(pct * 2.5),
+                                     bg=THEMES[self.current_theme]["ACCENT"])
+                bar_frame.pack(side="left", padx=(4, 6))
+                bar_frame.pack_propagate(False)
+
+                pct_lbl = tk.Label(row, text=f"{pct}%  ({mins}m)", font=("Arial", 9))
+                pct_lbl.pack(side="left")
+                self._reg(pct_lbl, "BG", "FG")
+        else:
+            no_cat_lbl = tk.Label(self.content_area, text="No category data in the last 30 days.",
+                                  font=("Arial", 10))
+            no_cat_lbl.pack(pady=5)
+            self._reg(no_cat_lbl, "BG", "FG")
+
         self._apply_theme()
 
     def _apply_theme(self):
