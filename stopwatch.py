@@ -258,20 +258,75 @@ class StudyTimerApp:
         self._clear_content()
         self.active_panel = "summary"
 
-        lbl = tk.Label(self.content_area, text="Last 7 Days Summary", font=("Arial", 14, "bold"))
+        lbl = tk.Label(self.content_area, text="Study Summary", font=("Arial", 14, "bold"))
         lbl.pack(pady=(20, 10))
         self._reg(lbl, "BG", "FG")
 
+        # Range selector
+        range_frame = tk.Frame(self.content_area)
+        range_frame.pack(pady=(0, 10))
+        self._reg(range_frame, "BG")
+
+        self.summary_range = tk.StringVar(value="Week")
+
+        for label in ["Week", "Month", "All"]:
+            btn = tk.Radiobutton(range_frame, text=label, variable=self.summary_range,
+                                 value=label, command=self._refresh_summary_table,
+                                 indicatoron=False, width=7, relief="flat", padx=6)
+            btn.pack(side="left", padx=3)
+            self._reg(btn, "BTN_BG", "BTN_FG")
+
         self.tree = ttk.Treeview(self.content_area, columns=("date", "duration"),
-                                  show="headings", height=9)
+                                  show="headings", height=12)
         self.tree.heading("date", text="Date")
         self.tree.heading("duration", text="Duration")
         self.tree.column("date", width=230, anchor="center")
         self.tree.column("duration", width=200, anchor="center")
         self.tree.pack(padx=20, pady=5)
 
+        self.summary_total_lbl = tk.Label(self.content_area, text="", font=("Arial", 11, "bold"))
+        self.summary_total_lbl.pack(pady=(5, 0))
+        self._reg(self.summary_total_lbl, "BG", "FG")
+
         self._apply_theme()
-        self.refresh_stats()
+        self._refresh_summary_table()
+
+    def _refresh_summary_table(self):
+        if not hasattr(self, "tree") or not self.tree.winfo_exists():
+            return
+
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+
+        data = load_data()
+        today = datetime.now()
+        selected = self.summary_range.get()
+
+        if selected == "Week":
+            days = [(today - timedelta(days=i)) for i in range(7)]
+        elif selected == "Month":
+            days = [(today - timedelta(days=i)) for i in range(30)]
+        else:  # All
+            all_dates = sorted(
+                [k for k in data.keys()
+                 if k not in ("goal_hours", "theme", "sessions")],
+                reverse=True
+            )
+            days = [datetime.strptime(d, "%Y-%m-%d") for d in all_dates]
+
+        total_seconds = 0
+        for day in days:
+            day_str = day.strftime("%Y-%m-%d")
+            seconds = get_day_total(data.get(day_str, {}))
+            total_seconds += seconds
+            display_date = day.strftime("%d.%m.%Y")
+            if day.date() == today.date():
+                display_date += " (Today)"
+            self.tree.insert("", "end", values=(display_date, format_duration(seconds)))
+
+        self.summary_total_lbl.config(
+            text=f"Total: {format_duration(total_seconds)}  ({len(days)} days)"
+        )
 
     def _show_stats(self):
         self._clear_content()
@@ -1039,17 +1094,13 @@ class StudyTimerApp:
         total_seconds = 0
 
         if self.active_panel == "summary" and hasattr(self, "tree"):
-            for row in self.tree.get_children():
-                self.tree.delete(row)
+            self._refresh_summary_table()
 
         for i in range(DAYS_TO_SHOW):
             day = today - timedelta(days=i)
             day_str = day.strftime("%Y-%m-%d")
             seconds = get_day_total(data.get(day_str, {}))
             total_seconds += seconds
-            if self.active_panel == "summary" and hasattr(self, "tree"):
-                display_date = day.strftime("%d.%m.%Y") + (" (Today)" if i == 0 else "")
-                self.tree.insert("", "end", values=(display_date, format_duration(seconds)))
 
         if self.active_panel == "stats":
             if hasattr(self, "total_label"):
