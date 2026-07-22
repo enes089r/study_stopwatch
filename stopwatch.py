@@ -240,6 +240,11 @@ class StudyTimerApp:
 
         ttk.Separator(self.content_area, orient="horizontal").pack(fill="x", padx=20, pady=15)
 
+        self.today_total_label = tk.Label(self.content_area, text="Today: 0h 0m 0s",
+                                          font=("Arial", 12))
+        self.today_total_label.pack(pady=(0, 5))
+        self._reg(self.today_total_label, "BG", "FG")
+
         self.streak_label = tk.Label(self.content_area, text="🔥 Streak: 0 days",
                                       font=("Arial", 12, "bold"))
         self.streak_label.pack()
@@ -1112,6 +1117,10 @@ class StudyTimerApp:
         if hasattr(self, "streak_label"):
             streak = calculate_streak(data)
             self.streak_label.config(text=f"🔥 Streak: {streak} day{'s' if streak != 1 else ''}")
+
+        if hasattr(self, "today_total_label"):
+            today_seconds = get_day_total(data.get(today.strftime("%Y-%m-%d"), {}))
+            self.today_total_label.config(text=f"Today: {format_duration(today_seconds)}")
 
         if hasattr(self, "category_breakdown_label"):
             today_data = data.get(today.strftime("%Y-%m-%d"), {})
