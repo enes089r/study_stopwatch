@@ -934,6 +934,50 @@ class StudyTimerApp:
             no_cat_lbl.pack(pady=5)
             self._reg(no_cat_lbl, "BG", "FG")
 
+        # ---------- Chronotype detection ----------
+        chrono_lbl = tk.Label(self.content_area, text="Your study chronotype",
+                              font=("Arial", 10))
+        chrono_lbl.pack(pady=(18, 6))
+        self._reg(chrono_lbl, "BG", "FG")
+
+        if morning + afternoon + evening > 0:
+            dominant = max(
+                [("morning", morning), ("afternoon", afternoon), ("evening", evening)],
+                key=lambda x: x[1]
+            )[0]
+
+            chrono_map = {
+                "morning": (
+                    "🌅 Early bird",
+                    "You tend to study in the morning. Protect your mornings — avoid scheduling meetings or distractions before noon."
+                ),
+                "afternoon": (
+                    "☀️ Afternoon worker",
+                    "You're most active in the afternoon. Use your mornings for lighter tasks and save deep work for after lunch."
+                ),
+                "evening": (
+                    "🌙 Night owl",
+                    "You study mostly in the evenings. Make sure you're not sacrificing sleep — consistency matters more than late-night sessions."
+                ),
+            }
+
+            title, tip = chrono_map[dominant]
+
+            chrono_title = tk.Label(self.content_area, text=title, font=("Arial", 13, "bold"))
+            chrono_title.pack()
+            self._reg(chrono_title, "BG", "ACCENT")
+
+            chrono_tip = tk.Label(self.content_area, text=tip, font=("Arial", 10),
+                                  wraplength=450, justify="center")
+            chrono_tip.pack(pady=(6, 10))
+            self._reg(chrono_tip, "BG", "FG")
+        else:
+            no_chrono = tk.Label(self.content_area,
+                                 text="Not enough data yet to detect your chronotype.",
+                                 font=("Arial", 10))
+            no_chrono.pack(pady=5)
+            self._reg(no_chrono, "BG", "FG")
+
         self._apply_theme()
 
     def _apply_theme(self):
