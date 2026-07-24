@@ -351,6 +351,51 @@ class StudyTimerApp:
         self.average_label.pack(pady=8)
         self._reg(self.average_label, "BG", "FG")
 
+        ttk.Separator(self.content_area, orient="horizontal").pack(fill="x", padx=40, pady=15)
+
+        # Session quality stats
+        data = load_data()
+        sessions = data.get("sessions", [])
+
+        if sessions:
+            durations = [s.get("duration_seconds", 0) for s in sessions if s.get("duration_seconds", 0) > 0]
+            if durations:
+                avg_sec = sum(durations) // len(durations)
+                longest = max(durations)
+                shortest = min(durations)
+                total_sessions = len(durations)
+
+                short = sum(1 for d in durations if d < 1800)       # < 30 min
+                medium = sum(1 for d in durations if 1800 <= d < 3600)  # 30-60 min
+                long_ = sum(1 for d in durations if d >= 3600)       # > 60 min
+
+                stats = [
+                    ("Total sessions", str(total_sessions)),
+                    ("Average session", format_duration(avg_sec)),
+                    ("Longest session", format_duration(longest)),
+                    ("Shortest session", format_duration(shortest)),
+                    ("Short  (< 30 min)", f"{short} session{'s' if short != 1 else ''}"),
+                    ("Medium (30–60 min)", f"{medium} session{'s' if medium != 1 else ''}"),
+                    ("Long   (> 60 min)", f"{long_} session{'s' if long_ != 1 else ''}"),
+                ]
+
+                for label, value in stats:
+                    row = tk.Frame(self.content_area)
+                    row.pack(fill="x", padx=80, pady=3)
+                    self._reg(row, "BG")
+
+                    tk.Label(row, text=label, font=("Arial", 11), anchor="w", width=20).pack(side="left")
+                    self._reg(row.winfo_children()[-1], "BG", "FG")
+
+                    tk.Label(row, text=value, font=("Arial", 11, "bold"), anchor="w").pack(side="left")
+                    self._reg(row.winfo_children()[-1], "BG", "ACCENT")
+        else:
+            no_lbl = tk.Label(self.content_area,
+                              text="No session data yet.",
+                              font=("Arial", 11))
+            no_lbl.pack(pady=10)
+            self._reg(no_lbl, "BG", "FG")
+
         self._apply_theme()
         self.refresh_stats()
 
